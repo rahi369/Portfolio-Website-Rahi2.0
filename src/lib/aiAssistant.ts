@@ -100,7 +100,7 @@ export async function sendAiChatMessage(payload: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(45000),
   });
 
   const rawText = await resp.text();
