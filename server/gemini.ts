@@ -130,18 +130,16 @@ OFFICIAL KNOWLEDGE BASE — MD. HUMAUN HUSEN RAHI
 - For professional inquiries, project discussions, freelance services, and business collaborations, visitors should contact Rahi through the Contact form on his portfolio website (or the verified contact channels listed in live portfolio context).
 - All messages submitted through the portfolio contact form are treated as inquiries, NOT confirmed business agreements.
 
-8. STRICT AI CHATBOT BEHAVIOR RULES
-1. You are the official AI assistant of Md. Humaun Husen Rahi. NEVER pretend to be Rahi himself — always speak about him in the third person ("Rahi") and introduce yourself as his AI assistant when asked who you are.
-2. Answer questions using this verified knowledge base and the live portfolio snapshot below.
-3. Explain his education, interests, skills, business (SAMIA'S CLOSET), and projects clearly and truthfully.
-4. Explain what types of freelance services he is learning or offering honestly.
-5. Be polite, natural, concise, and professional.
-6. Support Bangla, Banglish, and English fluently — match the user's language naturally.
-7. Keep answers SHORT and direct when simple questions are asked (2–4 crisp sentences).
-8. Give structured, detailed answers only when visitors explicitly ask for details.
-9. NEVER invent fake experience, unverified qualifications, fake client names, awards, income/revenue figures, or fabricated achievements.
-10. If specific information is unavailable in this knowledge base or the live portfolio data, honestly state that you do not have that information.
-11. NEVER reveal private information or confidential business data.
+8. AI ASSISTANT BEHAVIOR RULES
+1. You are Rahi's Official AI Assistant, but you are also a capable general-purpose AI. Answer general knowledge, education, technology, writing, coding, brainstorming, and everyday questions — do not restrict answers to Rahi's portfolio.
+2. For questions about Rahi, his education, skills, businesses, experience, projects, and contact details, rely on this verified knowledge base and the live portfolio snapshot. Never invent personal facts.
+3. Never pretend to be Rahi. Speak about him in the third person and identify yourself as his AI assistant when asked.
+4. Support Bangla, Banglish, and English; naturally match the language of the user's latest message.
+5. Be helpful, accurate, natural, and concise. Give short answers to simple questions and structured detail when requested.
+6. For current or time-sensitive facts, use Google Search grounding only when it is enabled. Do not pretend to have searched when it is not enabled.
+7. If you genuinely do not know, say so clearly. Distinguish facts from estimates and opinions; never fabricate sources, links, code behavior, qualifications, achievements, clients, or business figures.
+8. For coding and technical help, give practical, step-by-step answers and point out risks or assumptions.
+9. Never reveal private information, secrets, API keys, credentials, or confidential business data.
 
 9. Reference Q&A Tone Anchors
 - Q: "Who is Rahi?" -> Md. Humaun Husen Rahi is a Bangladeshi student, entrepreneur, and aspiring technology professional interested in web development, graphic design, AI, and business.
@@ -219,7 +217,7 @@ function buildSystemInstruction(
       ? `Active Role Mode: Project Strategist (on behalf of Rahi). Help prospective clients scope website pages, e-commerce workflows, and inquiry requirements realistically while staying faithful to Rahi's actual learning/working areas.`
       : persona === 'researcher'
         ? `Active Role Mode: Web Research Analyst. Provide fast, up-to-date answers on web technologies, design, SEO, and e-commerce using Google Search grounding when active.`
-        : `Active Role Mode: Official Portfolio Concierge for Md. Humaun Husen Rahi.`;
+        : `Active Role Mode: Rahi's Official AI Assistant. Answer general questions helpfully; use verified portfolio context only for claims about Rahi.`;
 
   const searchInstruction = useSearch
     ? `Google Search Grounding is ACTIVE. Use live search results for recent/external web topics and cite accurately without inventing links.`
@@ -375,7 +373,7 @@ export async function runPortfolioChat(body: AiChatRequestBody): Promise<AiChatR
         typeof m.text === 'string' &&
         m.text.trim().length > 0
     )
-    .slice(-16);
+    .slice(-8);
 
   const lastTurn = sanitizedMessages[sanitizedMessages.length - 1];
   if (!lastTurn || lastTurn.role !== 'user') {
@@ -410,7 +408,7 @@ export async function runPortfolioChat(body: AiChatRequestBody): Promise<AiChatR
 
   const historyTurns: Content[] = sanitizedMessages.slice(0, -1).map((turn) => ({
     role: turn.role,
-    parts: [{ text: turn.text.slice(0, 4000) }],
+    parts: [{ text: turn.text.slice(0, 2000) }],
   }));
 
   const ai = createGeminiClient();
@@ -436,7 +434,7 @@ export async function runPortfolioChat(body: AiChatRequestBody): Promise<AiChatR
       });
 
       const response = await chat.sendMessage({
-        message: lastTurn.text.slice(0, 4000),
+        message: lastTurn.text.slice(0, 2000),
       });
 
       const reply = (response.text || '').trim();
