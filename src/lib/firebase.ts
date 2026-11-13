@@ -34,8 +34,8 @@ export const db =
     : getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
-storage.maxUploadRetryTime = 6000;
-storage.maxOperationRetryTime = 6000;
+storage.maxUploadRetryTime = 90000;
+storage.maxOperationRetryTime = 90000;
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
