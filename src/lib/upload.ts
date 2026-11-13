@@ -253,7 +253,7 @@ export async function uploadAssetFile(
             : 'Upload server unreachable';
     }
   }
-  // 3. Fallback to Firebase Storage SDK with strict 7.5s timeout so it never hangs
+  // 3. Fallback to Firebase Storage with a generous timeout for mobile networks.
   try {
     const safeName = prepared.fileName
       .toLowerCase()
