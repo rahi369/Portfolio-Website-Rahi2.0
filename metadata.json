@@ -1,0 +1,6 @@
+{
+  "name": "Kanso Atelier",
+  "description": "Architectural furniture, sculptural lighting, and bespoke interior joinery studio storefront with portfolio case studies and client portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

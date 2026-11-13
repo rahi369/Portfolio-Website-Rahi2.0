@@ -1,0 +1,431 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isEmail(val) {
+      return val is string && val.size() >= 5 && val.size() <= 200 && val.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'rahihumaun369@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // --- Validation Blueprints ---
+    function isValidSiteProfile(data) {
+      return data.keys().hasAll([
+          'fullName', 'brandName', 'professionalTitle', 'location',
+          'tagline', 'shortIntro', 'profilePhotoUrl', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'fullName', 'brandName', 'professionalTitle', 'founderOf',
+          'location', 'tagline', 'shortIntro', 'profilePhotoUrl', 'updatedAt'
+        ])
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120
+        && data.brandName is string && data.brandName.size() >= 1 && data.brandName.size() <= 40
+        && data.professionalTitle is string && data.professionalTitle.size() >= 2 && data.professionalTitle.size() <= 140
+        && (!('founderOf' in data) || (data.founderOf is string && data.founderOf.size() <= 100))
+        && data.location is string && data.location.size() >= 2 && data.location.size() <= 140
+        && data.tagline is string && data.tagline.size() >= 2 && data.tagline.size() <= 200
+        && data.shortIntro is string && data.shortIntro.size() >= 10 && data.shortIntro.size() <= 1200
+        && data.profilePhotoUrl is string && data.profilePhotoUrl.size() <= 600
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSiteAbout(data) {
+      return data.keys().hasAll([
+          'personalIntroduction', 'myJourney', 'webDevBackground',
+          'entrepreneurship', 'education', 'professionalGoals', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'personalIntroduction', 'myJourney', 'webDevBackground',
+          'entrepreneurship', 'education', 'professionalGoals', 'updatedAt'
+        ])
+        && data.personalIntroduction is string && data.personalIntroduction.size() <= 2500
+        && data.myJourney is string && data.myJourney.size() <= 2500
+        && data.webDevBackground is string && data.webDevBackground.size() <= 2500
+        && data.entrepreneurship is string && data.entrepreneurship.size() <= 2500
+        && data.education is string && data.education.size() <= 2000
+        && data.professionalGoals is string && data.professionalGoals.size() <= 2500
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSiteSettings(data) {
+      return data.keys().hasAll([
+          'contactEmail', 'whatsappNumber', 'copyrightNotice',
+          'cvPublic', 'seoTitle', 'seoDescription', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'contactEmail', 'whatsappNumber', 'githubUrl', 'linkedinUrl',
+          'facebookUrl', 'twitterUrl', 'instagramUrl', 'youtubeUrl',
+          'tiktokUrl', 'threadsUrl', 'behanceUrl', 'dribbbleUrl',
+          'pinterestUrl', 'telegramUrl', 'copyrightNotice',
+          'cvUrl', 'cvFileName', 'cvPublic', 'seoTitle', 'seoDescription',
+          'seoShareImageUrl', 'cloudinaryCloudName', 'cloudinaryUploadPreset', 'updatedAt'
+        ])
+        && isEmail(data.contactEmail)
+        && data.whatsappNumber is string && data.whatsappNumber.size() <= 30
+        && (!('githubUrl' in data) || (data.githubUrl is string && data.githubUrl.size() <= 300))
+        && (!('linkedinUrl' in data) || (data.linkedinUrl is string && data.linkedinUrl.size() <= 300))
+        && (!('facebookUrl' in data) || (data.facebookUrl is string && data.facebookUrl.size() <= 300))
+        && (!('twitterUrl' in data) || (data.twitterUrl is string && data.twitterUrl.size() <= 300))
+        && (!('instagramUrl' in data) || (data.instagramUrl is string && data.instagramUrl.size() <= 300))
+        && (!('youtubeUrl' in data) || (data.youtubeUrl is string && data.youtubeUrl.size() <= 300))
+        && (!('tiktokUrl' in data) || (data.tiktokUrl is string && data.tiktokUrl.size() <= 300))
+        && (!('threadsUrl' in data) || (data.threadsUrl is string && data.threadsUrl.size() <= 300))
+        && (!('behanceUrl' in data) || (data.behanceUrl is string && data.behanceUrl.size() <= 300))
+        && (!('dribbbleUrl' in data) || (data.dribbbleUrl is string && data.dribbbleUrl.size() <= 300))
+        && (!('pinterestUrl' in data) || (data.pinterestUrl is string && data.pinterestUrl.size() <= 300))
+        && (!('telegramUrl' in data) || (data.telegramUrl is string && data.telegramUrl.size() <= 300))
+        && data.copyrightNotice is string && data.copyrightNotice.size() <= 160
+        && (!('cvUrl' in data) || (data.cvUrl is string && data.cvUrl.size() <= 600))
+        && (!('cvFileName' in data) || (data.cvFileName is string && data.cvFileName.size() <= 160))
+        && data.cvPublic is bool
+        && data.seoTitle is string && data.seoTitle.size() <= 140
+        && data.seoDescription is string && data.seoDescription.size() <= 320
+        && (!('seoShareImageUrl' in data) || (data.seoShareImageUrl is string && data.seoShareImageUrl.size() <= 600))
+        && (!('cloudinaryCloudName' in data) || (data.cloudinaryCloudName is string && data.cloudinaryCloudName.size() <= 120))
+        && (!('cloudinaryUploadPreset' in data) || (data.cloudinaryUploadPreset is string && data.cloudinaryUploadPreset.size() <= 120))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDesignItem(data) {
+      return data.keys().hasAll([
+          'title', 'description', 'category', 'imageUrl', 'altText',
+          'creationDate', 'published', 'featured', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'description', 'category', 'imageUrl', 'altText',
+          'externalLink', 'creationDate', 'published', 'featured', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 140
+        && data.description is string && data.description.size() <= 1500
+        && data.category in [
+          'Website UI', 'Homepage', 'Landing Page', 'Dashboard',
+          'App UI', 'Graphic Design', 'Other'
+        ]
+        && data.imageUrl is string && data.imageUrl.size() >= 2 && data.imageUrl.size() <= 600
+        && data.altText is string && data.altText.size() <= 200
+        && (!('externalLink' in data) || (data.externalLink is string && data.externalLink.size() <= 400))
+        && data.creationDate is string && data.creationDate.size() <= 40
+        && data.published is bool
+        && data.featured is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidProjectItem(data) {
+      return data.keys().hasAll([
+          'title', 'description', 'problem', 'solution', 'technologies',
+          'screenshotUrls', 'status', 'featured', 'published', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'description', 'problem', 'solution', 'technologies',
+          'screenshotUrls', 'liveDemoUrl', 'githubUrl', 'status',
+          'featured', 'published', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 140
+        && data.description is string && data.description.size() >= 5 && data.description.size() <= 2000
+        && data.problem is string && data.problem.size() <= 1500
+        && data.solution is string && data.solution.size() <= 1500
+        && data.technologies is list && data.technologies.size() <= 16
+        && (data.technologies.size() == 0 || (data.technologies[0] is string && data.technologies[0].size() <= 60))
+        && data.screenshotUrls is list && data.screenshotUrls.size() <= 6
+        && (data.screenshotUrls.size() == 0 || (data.screenshotUrls[0] is string && data.screenshotUrls[0].size() <= 600))
+        && (!('liveDemoUrl' in data) || (data.liveDemoUrl is string && data.liveDemoUrl.size() <= 400))
+        && (!('githubUrl' in data) || (data.githubUrl is string && data.githubUrl.size() <= 400))
+        && data.status is string && data.status.size() <= 60
+        && data.featured is bool
+        && data.published is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSkillItem(data) {
+      return data.keys().hasAll(['name', 'category', 'description', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'category', 'description', 'proficiency', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.category in [
+          'Frontend Development', 'Backend Development', 'Database',
+          'UI/UX Design', 'AI Tools', 'Deployment & Hosting'
+        ]
+        && data.description is string && data.description.size() <= 400
+        && (!('proficiency' in data) || (data.proficiency is string && data.proficiency.size() <= 60))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidExperienceItem(data) {
+      return data.keys().hasAll([
+          'title', 'organization', 'kind', 'description',
+          'startDate', 'isCurrent', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'organization', 'kind', 'description',
+          'startDate', 'endDate', 'isCurrent', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 140
+        && data.organization is string && data.organization.size() >= 2 && data.organization.size() <= 140
+        && data.kind in ['experience', 'education']
+        && data.description is string && data.description.size() <= 1500
+        && data.startDate is string && data.startDate.size() <= 40
+        && (!('endDate' in data) || (data.endDate is string && data.endDate.size() <= 40))
+        && data.isCurrent is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAchievementItem(data) {
+      return data.keys().hasAll([
+          'title', 'issuer', 'issueDate', 'description',
+          'published', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'issuer', 'issueDate', 'description',
+          'certificateUrl', 'imageUrl', 'published', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 140
+        && data.issuer is string && data.issuer.size() <= 140
+        && data.issueDate is string && data.issueDate.size() <= 40
+        && data.description is string && data.description.size() <= 1000
+        && (!('certificateUrl' in data) || (data.certificateUrl is string && data.certificateUrl.size() <= 500))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 600))
+        && data.published is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidServiceItem(data) {
+      return data.keys().hasAll([
+          'title', 'description', 'features', 'published', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'description', 'features', 'startingPrice',
+          'imageUrl', 'published', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 120
+        && data.description is string && data.description.size() >= 5 && data.description.size() <= 1500
+        && data.features is list && data.features.size() <= 10
+        && (data.features.size() == 0 || (data.features[0] is string && data.features[0].size() <= 140))
+        && (!('startingPrice' in data) || (data.startingPrice is string && data.startingPrice.size() <= 60))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 600))
+        && data.published is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidContactMessage(data) {
+      return data.keys().hasAll([
+          'fullName', 'email', 'projectType', 'description', 'status', 'submittedAt'
+        ])
+        && data.keys().hasOnly([
+          'fullName', 'email', 'whatsapp', 'projectType',
+          'budgetRange', 'description', 'status', 'submittedAt'
+        ])
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120
+        && isEmail(data.email)
+        && (!('whatsapp' in data) || (data.whatsapp is string && data.whatsapp.size() <= 40))
+        && data.projectType is string && data.projectType.size() >= 2 && data.projectType.size() <= 80
+        && (!('budgetRange' in data) || (data.budgetRange is string && data.budgetRange.size() <= 60))
+        && data.description is string && data.description.size() >= 10 && data.description.size() <= 3000
+        && data.status in ['unread', 'read', 'archived']
+        && data.submittedAt is timestamp;
+    }
+
+    function isValidAdminMember(data) {
+      return data.keys().hasAll(['uid', 'email', 'grantedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'grantedAt'])
+        && isValidId(data.uid)
+        && isEmail(data.email)
+        && data.grantedAt is timestamp;
+    }
+
+    function isValidAiChatThread(data) {
+      return data.keys().hasAll(['title', 'persona', 'mode', 'useSearch', 'messagesJson', 'updatedAt'])
+        && data.keys().hasOnly(['title', 'persona', 'mode', 'useSearch', 'messagesJson', 'updatedAt'])
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.persona in ['concierge', 'strategist', 'researcher']
+        && data.mode in ['auto', 'balanced', 'deep', 'fast']
+        && data.useSearch is bool
+        && data.messagesJson is string && data.messagesJson.size() <= 200000
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Collection Match Blocks ---
+
+    match /test/connection {
+      allow get: if true;
+    }
+
+    match /site_profile/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update: if isAdmin() && isValidId(docId) && isValidSiteProfile(incoming()) && incoming().updatedAt == request.time;
+    }
+
+    match /site_about/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update: if isAdmin() && isValidId(docId) && isValidSiteAbout(incoming()) && incoming().updatedAt == request.time;
+    }
+
+    match /site_settings/{docId} {
+      allow get: if isValidId(docId);
+      allow list: if true;
+      allow create, update: if isAdmin() && isValidId(docId) && isValidSiteSettings(incoming()) && incoming().updatedAt == request.time;
+    }
+
+    match /gallery/{designId} {
+      allow get: if isValidId(designId) && (resource.data.published == true || isAdmin());
+      allow list: if resource.data.published == true || isAdmin();
+      allow create: if isAdmin() && isValidId(designId) && isValidDesignItem(incoming())
+        && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(designId) && isValidDesignItem(incoming())
+        && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'description', 'category', 'imageUrl', 'altText',
+          'externalLink', 'creationDate', 'published', 'featured', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(designId);
+    }
+
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && (resource.data.published == true || isAdmin());
+      allow list: if resource.data.published == true || isAdmin();
+      allow create: if isAdmin() && isValidId(projectId) && isValidProjectItem(incoming())
+        && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(projectId) && isValidProjectItem(incoming())
+        && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'description', 'problem', 'solution', 'technologies',
+          'screenshotUrls', 'liveDemoUrl', 'githubUrl', 'status',
+          'featured', 'published', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(projectId);
+    }
+
+    match /skills/{skillId} {
+      allow get: if isValidId(skillId);
+      allow list: if true;
+      allow create: if isAdmin() && isValidId(skillId) && isValidSkillItem(incoming())
+        && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(skillId) && isValidSkillItem(incoming())
+        && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'category', 'description', 'proficiency', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(skillId);
+    }
+
+    match /experience/{expId} {
+      allow get: if isValidId(expId);
+      allow list: if true;
+      allow create: if isAdmin() && isValidId(expId) && isValidExperienceItem(incoming())
+        && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(expId) && isValidExperienceItem(incoming())
+        && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'organization', 'kind', 'description',
+          'startDate', 'endDate', 'isCurrent', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(expId);
+    }
+
+    match /achievements/{achId} {
+      allow get: if isValidId(achId) && (resource.data.published == true || isAdmin());
+      allow list: if resource.data.published == true || isAdmin();
+      allow create: if isAdmin() && isValidId(achId) && isValidAchievementItem(incoming())
+        && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(achId) && isValidAchievementItem(incoming())
+        && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'issuer', 'issueDate', 'description',
+          'certificateUrl', 'imageUrl', 'published', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(achId);
+    }
+
+    match /services/{serviceId} {
+      allow get: if isValidId(serviceId) && (resource.data.published == true || isAdmin());
+      allow list: if resource.data.published == true || isAdmin();
+      allow create: if isAdmin() && isValidId(serviceId) && isValidServiceItem(incoming())
+        && incoming().createdAt == request.time && incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(serviceId) && isValidServiceItem(incoming())
+        && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'description', 'features', 'startingPrice',
+          'imageUrl', 'published', 'updatedAt'
+        ]);
+      allow delete: if isAdmin() && isValidId(serviceId);
+    }
+
+    // Public Contact Messages: Anyone can create; ONLY Admin can read/update/delete
+    match /messages/{messageId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(messageId)
+        && isValidContactMessage(incoming())
+        && incoming().status == 'unread'
+        && incoming().submittedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(messageId)
+        && isValidContactMessage(incoming())
+        && incoming().submittedAt == existing().submittedAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isAdmin() && isValidId(messageId);
+    }
+
+    // Trusted Admin Registry
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(adminId)
+        && isValidAdminMember(incoming())
+        && incoming().uid == adminId
+        && incoming().grantedAt == request.time;
+      allow delete: if isAdmin() && isValidId(adminId);
+    }
+
+    // Persisted AI Studio Assistant Threads (Admin-only)
+    match /ai_threads/{threadId} {
+      allow get, list: if isAdmin();
+      allow create, update: if isAdmin()
+        && isValidId(threadId)
+        && isValidAiChatThread(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(threadId);
+    }
+  }
+}
