@@ -156,93 +156,104 @@ export async function uploadAssetFile(
   const uploadPreset =
     cloudinaryConfig?.uploadPreset?.trim() || import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-  // 1. Use Cloudinary unsigned upload if configured (works on every static & full-stack host)
+  // 1. Prefer Cloudinary when configured. A slow mobile connection should not
+  // be treated as a failed upload after only 15 seconds; if Cloudinary rejects
+  // the request, continue to the Firebase Storage fallback.
+  let cloudinaryFailureReason = '';
   if (cloudName && uploadPreset) {
-    const formData = new FormData();
-    formData.append('file', prepared.blob, prepared.fileName);
-    formData.append('upload_preset', uploadPreset);
-    const resourceType = prepared.mimeType === 'application/pdf' ? 'raw' : 'image';
-    const resp = await fetch(
-      `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${resourceType}/upload`,
-      {
-        method: 'POST',
-        body: formData,
-        signal: AbortSignal.timeout(15000),
+    try {
+      const formData = new FormData();
+      formData.append('file', prepared.blob, prepared.fileName);
+      formData.append('upload_preset', uploadPreset);
+      const resourceType = prepared.mimeType === 'application/pdf' ? 'raw' : 'image';
+      const resp = await fetch(
+        `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/${resourceType}/upload`,
+        {
+          method: 'POST',
+          body: formData,
+          signal: AbortSignal.timeout(60000),
+        }
+      );
+      const data = (await safeReadJson(resp)) as {
+        secure_url?: string;
+        original_filename?: string;
+        error?: { message?: string } | string;
+      } | null;
+      if (!resp.ok || !data?.secure_url) {
+        const errMsg =
+          typeof data?.error === 'object' ? data.error?.message : data?.error;
+        throw new Error(errMsg || `Cloudinary upload failed (${resp.status}).`);
       }
-    );
-    const data = (await safeReadJson(resp)) as {
-      secure_url?: string;
-      original_filename?: string;
-      error?: { message?: string } | string;
-    } | null;
-    if (!resp.ok || !data?.secure_url) {
-      const errMsg =
-        typeof data?.error === 'object' ? data.error?.message : data?.error;
-      throw new Error(errMsg || `Cloudinary upload failed (${resp.status}).`);
-    }
-    return {
-      url: data.secure_url,
-      fileName: data.original_filename || prepared.fileName,
-    };
-  }
-
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Please sign in as administrator before uploading files.');
-  }
-
-  // 2. Try authenticated Express /api/upload endpoint with strict 12s timeout
-  let serverFailureReason = '';
-  try {
-    const idToken = await currentUser.getIdToken();
-    const dataBase64 = await fileToBase64(prepared.blob);
-
-    const resp = await fetch('/api/upload', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        fileName: prepared.fileName,
-        mimeType: prepared.mimeType,
-        dataBase64,
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
-
-    const payload = await safeReadJson(resp);
-    if (resp.ok && payload?.url) {
       return {
-        url: payload.url,
-        fileName: payload.fileName || prepared.fileName,
+        url: data.secure_url,
+        fileName: data.original_filename || prepared.fileName,
       };
+    } catch (err) {
+      cloudinaryFailureReason =
+        err instanceof Error ? err.message : 'Cloudinary upload failed';
     }
-
-    // If /api/upload explicitly rejected auth or validation with JSON, surface it immediately
-    if (payload?.error && resp.status < 500 && resp.status !== 404 && resp.status !== 405) {
-      throw new Error(payload.error);
-    }
-    serverFailureReason = payload?.error || `Upload endpoint unavailable (HTTP ${resp.status})`;
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      err.name !== 'TimeoutError' &&
-      err.name !== 'AbortError' &&
-      !err.message.includes('Failed to fetch') &&
-      !err.message.includes('HTTP ')
-    ) {
-      throw err;
-    }
-    serverFailureReason =
-      err instanceof Error && err.name === 'TimeoutError'
-        ? 'Upload server timed out'
-        : err instanceof Error
-          ? err.message
-          : 'Upload server unreachable';
   }
 
-  // 3. Fallback to Firebase Storage SDK with strict 7.5s timeout so it never hangs
+  // 2. The Vercel /api/upload route intentionally returns 404 because local
+  // disk is ephemeral on serverless hosting. Only use that endpoint locally;
+  // production uploads go directly to durable cloud storage instead of first
+  // converting the file to a large base64 JSON payload.
+  let serverFailureReason = cloudinaryFailureReason;
+  const isLocalNodeHost =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+  if (isLocalNodeHost) {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('Please sign in as administrator before uploading files.');
+    }
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      const dataBase64 = await fileToBase64(prepared.blob);
+      const resp = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          fileName: prepared.fileName,
+          mimeType: prepared.mimeType,
+          dataBase64,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const payload = await safeReadJson(resp);
+      if (resp.ok && payload?.url) {
+        return {
+          url: payload.url,
+          fileName: payload.fileName || prepared.fileName,
+        };
+      }
+      if (payload?.error && resp.status < 500 && resp.status !== 404 && resp.status !== 405) {
+        throw new Error(payload.error);
+      }
+      serverFailureReason = payload?.error || `Upload endpoint unavailable (HTTP ${resp.status})`;
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.name !== 'TimeoutError' &&
+        err.name !== 'AbortError' &&
+        !err.message.includes('Failed to fetch') &&
+        !err.message.includes('HTTP ')
+      ) {
+        throw err;
+      }
+      serverFailureReason =
+        err instanceof Error && err.name === 'TimeoutError'
+          ? 'Upload server timed out'
+          : err instanceof Error
+            ? err.message
+            : 'Upload server unreachable';
+    }
+  }
+  // 3. Fallback to Firebase Storage with a generous timeout for mobile networks.
   try {
     const safeName = prepared.fileName
       .toLowerCase()
@@ -253,12 +264,12 @@ export async function uploadAssetFile(
       uploadBytes(storageRef, prepared.blob, {
         contentType: prepared.mimeType,
       }),
-      7500,
-      'Firebase Storage timed out (enable Storage & rules in Firebase Console).'
+      90000,
+      'Firebase Storage upload timed out after 90 seconds. Check the connection and Storage rules.'
     );
     const url = await withTimeout(
       getDownloadURL(storageRef),
-      5000,
+      20000,
       'Could not retrieve uploaded file URL.'
     );
     return {
@@ -268,7 +279,7 @@ export async function uploadAssetFile(
   } catch (fbErr) {
     const fbMsg = fbErr instanceof Error ? fbErr.message : '';
     throw new Error(
-      `Upload could not complete (${serverFailureReason}${fbMsg ? `; ${fbMsg}` : ''}). Add free Cloudinary credentials in Admin → Settings or paste a hosted image URL.`
+      `Upload could not complete (${serverFailureReason || 'Cloud upload unavailable'}${fbMsg ? `; ${fbMsg}` : ''}). Check that Firebase Storage is enabled and its rules allow the signed-in admin to upload, or configure Cloudinary in Admin → Settings.`
     );
   }
 }
